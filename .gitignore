@@ -1,0 +1,23 @@
+# --- IDE & OS ---
+.vscode/
+.DS_Store
+Thumbs.db
+
+# --- Backend ---
+backend/venv/
+backend/__pycache__/
+backend/*.pyc
+backend/.env
+backend/service_account.json  
+data/                 
+
+# --- Frontend ---
+frontend/node_modules/
+frontend/build/
+frontend/.env.local
+frontend/npm-debug.log*
+
+# --- Machine Learning ---
+*.h5
+*.pth
+backend/models/checkpoints/
