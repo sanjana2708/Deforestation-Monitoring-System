@@ -45,7 +45,7 @@ def generate_timelapse(lat, lon, start_year, end_year, save_dir):
     timelapse_col = ee.ImageCollection.fromImages(frames)
     video_url = timelapse_col.getVideoThumbURL({
         'dimensions': 1024,
-        'fps': 0.5,
+        'fps': 1,
         'region': region,
         'format': 'gif'
     })
