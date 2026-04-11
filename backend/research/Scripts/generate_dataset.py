@@ -25,7 +25,7 @@ def download_cnn_patch(date_str, point, save_dir):
                    .filterBounds(point.buffer(zoom_buffer))
                    .filterDate(date_str, end)
                    # Try 20% - a middle ground between Colab's 10% and Local's 40%
-                   .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))) 
+                   .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 30))) 
 
         if img_col.size().getInfo() == 0:
             return f"⏩ Skipped {date_str}: No imagery found under 20% clouds."
@@ -74,7 +74,7 @@ def run_dataset_harvest(lat, lon, start_date, end_date, threshold=0.25):
     df.set_index('time', inplace=True)
     
     # 2. Establish baseline (Auto-select 2021 or the earliest available year)
-    baseline_year = 2021
+    baseline_year = df.index.min().year
     baseline_val = df[df.index.year == baseline_year]['NDVI'].mean()
     if pd.isna(baseline_val):
         baseline_val = df['NDVI'].mean()
@@ -84,19 +84,32 @@ def run_dataset_harvest(lat, lon, start_date, end_date, threshold=0.25):
     print(f"🚨 Triggering downloads for NDVI < {baseline_val - threshold:.2f}")
 
     # 3. Identify drops and download patches
+    # 3. Identify drops and download patches
     poi = ee.Geometry.Point([lon, lat])
     count = 0
+    
+    print(f"🚀 Starting harvest loop...")
     
     for index, row in df.iterrows():
         if row['NDVI'] < (baseline_val - threshold):
             date_label = index.strftime('%Y-%m-%d')
-            print(f"🚨 Drop detected: {date_label} | Value: {row['NDVI']:.2f}")
             
-            status = download_cnn_patch(date_label, poi, save_dir)
-            print(status)
-            if "Saved" in status: count += 1
+            # --- THE LOGICAL FIX ---
+            try:
+                # We put the GEE communication inside this try block
+                # If an error happens here, the 'except' block will handle it
+                # and the 'for' loop will simply move to the next iteration.
+                status = download_cnn_patch(date_label, poi, save_dir)
+                print(f"Result for {date_label}: {status}")
+                
+                if "Saved" in status: 
+                    count += 1
+            except Exception as e:
+                # This catches the GEE "no bands" or "no imagery" errors
+                print(f"❌ Error at {date_label}, skipping to next month. Details: {e}")
+                continue 
 
-    print(f"\n✨ Process Complete. {count} patches downloaded to: {save_dir}")
+    print(f"\n✨ Harvest Complete. {count} patches downloaded.")
 
 if __name__ == "__main__":
     if authenticate_gee():
