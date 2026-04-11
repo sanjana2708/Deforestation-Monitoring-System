@@ -48,7 +48,7 @@ export default function LandingNav() {
           />
         </svg>
         <div className="landing-nav__brand-text">
-          <span className="landing-nav__brand-name">Himalayan Forest</span>
+          <span className="landing-nav__brand-name">Forest</span>
           <span className="landing-nav__brand-tag">Monitor</span>
         </div>
       </div>

@@ -29,9 +29,9 @@ export default function LandingFooter() {
         </a>
       </div>
       <div className="landing-footer__contact">
-        <p className="landing-footer__url">WWW.HIMALAYANFOREST.MONITOR</p>
+        {/* <p className="landing-footer__url">WWW.HIMALAYANFOREST.MONITOR</p> */}
         <p className="landing-footer__addr">Research &amp; conservation partners</p>
-        <p className="landing-footer__addr">Himalayan region — Earth observation lab</p>
+        <p className="landing-footer__addr">Earth observation lab</p>
       </div>
     </footer>
   )

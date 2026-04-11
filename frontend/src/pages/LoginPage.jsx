@@ -69,11 +69,11 @@ export default function LoginPage() {
   return (
     <AuthPageLayout
       imageUrl={AUTH_IMAGE_SIGNIN}
-      heading="Himalaya"
+      heading=""
       tagline="Finding focus in the data that guards our forests."
-      footerBrand="watch & protect"
-      footerLine1="+1 (000) 000-0000"
-      footerLine2="www.himalayanforest.monitor"
+      footerBrand=""
+      footerLine1=""
+      footerLine2=""
     >
       <h2 className="auth-form__title">Sign in here</h2>
       <form className="auth-form" onSubmit={handleSubmit} noValidate>
