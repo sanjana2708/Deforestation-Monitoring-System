@@ -4,11 +4,12 @@
 Thumbs.db
 
 # --- Backend ---
-backend/venv/
+backend/.venv/
 backend/__pycache__/
+backend/core/__pycache__/
 backend/*.pyc
 backend/.env
-backend/service_account.json  
+backend/core/service_account.json  
 data/                 
 
 # --- Frontend ---
