@@ -107,7 +107,7 @@ export default function DashboardCnn() {
             {classifyErr}
           </p>
         ) : null}
-        <div className="dash-widget__footer">MobileNetV2 forest model (backend)</div>
+        <div className="dash-widget__footer">MobileNetV2 forest model</div>
       </section>
 
       <div className="dash-cnn-split">

@@ -36,7 +36,7 @@ function DashboardShell() {
   return (
     <div className="dashboard">
       <header className="dash-header">
-        <h1 className="dash-header__title">Forest operations overview</h1>
+        <h1 className="dash-header__title">Dashboard</h1>
         <button
           type="button"
           className="dash-header__menu-btn"
@@ -57,13 +57,13 @@ function DashboardShell() {
       />
       <nav className={`dash-nav-panel${menuOpen ? ' dash-nav-panel--open' : ''}`} aria-label="Dashboard sections">
         <NavLink to="/dashboard" end className={navCls} onClick={() => setMenuOpen(false)}>
-          Main dashboard
+          Dashboard
         </NavLink>
         <NavLink to="/dashboard/geo" className={navCls} onClick={() => setMenuOpen(false)}>
-          Map, NDVI &amp; timelapse
+          Visual Insights
         </NavLink>
         <NavLink to="/dashboard/cnn" className={navCls} onClick={() => setMenuOpen(false)}>
-          CNN model analysis
+          Detailed Analysis
         </NavLink>
         <NavLink to="/dashboard/alerts" className={navCls} onClick={() => setMenuOpen(false)}>
           Alerts
