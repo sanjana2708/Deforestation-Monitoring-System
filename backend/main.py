@@ -6,6 +6,8 @@ import os
 import tempfile
 from pathlib import Path
 
+from fastapi import BackgroundTasks
+from research.Scripts.generate_dataset import execute_harvest
 # Import our custom modules
 # We import authenticate_gee to ensure it's available for context-checking
 from core.gee_engine import analyze_area, authenticate_gee
@@ -168,3 +170,29 @@ async def cnn_dataset_file(filename: str):
         media_type=cnn_dataset.guess_media_type(filename),
         filename=filename,
     )
+
+# 1. Define the model
+class HarvestRequest(BaseModel):
+    lat: float
+    lon: float
+    start: str = "2020-01-01"
+    end: str = "2024-12-01"
+    drop: float = 0.1
+
+# 2. Update the endpoint to use the model
+@app.post("/trigger-harvest")
+async def trigger_harvest(
+    request: HarvestRequest, # Use the model here
+    background_tasks: BackgroundTasks
+):
+    """Triggers the dataset harvest in the background."""
+    # Pass the fields from the request object
+    background_tasks.add_task(
+        execute_harvest, 
+        request.lat, 
+        request.lon, 
+        request.start, 
+        request.end, 
+        request.drop
+    )
+    return {"success": True, "message": "Harvest started in background."}

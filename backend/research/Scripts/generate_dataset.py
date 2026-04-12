@@ -12,6 +12,78 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 from core.gee_engine import analyze_area, authenticate_gee
 
+# Keep your existing imports, just ensure the file is accessible
+def execute_harvest(lat, lon, start, end, drop=0.1):
+    save_dir = os.path.join(os.path.dirname(__file__), "../../data/cnn_dataset_raw")
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir, exist_ok=True)
+
+    if os.path.exists(save_dir):
+        print(f"🧹 Clearing existing dataset at {save_dir}...")
+        # Remove all files in the directory without deleting the directory itself
+        for filename in os.listdir(save_dir):
+            file_path = os.path.join(save_dir, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path) # Removes the file or link
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path) # Removes subdirectories
+            except Exception as e:
+                print(f"⚠️ Failed to delete {file_path}. Reason: {e}")
+    else:
+        os.makedirs(save_dir, exist_ok=True)
+        
+    threshold = drop
+    # 1. Fetch historical NDVI using the core engine
+    print(f"📡 Requesting NDVI history for {lat}, {lon}...")
+    raw_data = analyze_area(lat, lon, start, end)
+    
+    if not raw_data:
+        print("❌ No data returned from GEE.")
+        return
+
+    df = pd.DataFrame(raw_data)
+    df['time'] = pd.to_datetime(df['time'])
+    df.set_index('time', inplace=True)
+    
+    # 2. Establish baseline (Auto-select 2021 or the earliest available year)
+    baseline_year = df.index.min().year
+    baseline_val = df[df.index.year == baseline_year]['NDVI'].mean()
+    if pd.isna(baseline_val):
+        baseline_val = df['NDVI'].mean()
+        print(f"⚠️ 2021 data missing. Using overall mean as baseline.")
+    
+    print(f"✅ Forest Baseline: {baseline_val:.2f}")
+    print(f"🚨 Triggering downloads for NDVI < {baseline_val - threshold:.2f}")
+
+    # 3. Identify drops and download patches
+    # 3. Identify drops and download patches
+    poi = ee.Geometry.Point([lon, lat])
+    count = 0
+    
+    print(f"🚀 Starting harvest loop...")
+
+    for index, row in df.iterrows():
+        if row['NDVI'] < (baseline_val - threshold):
+            date_label = index.strftime('%Y-%m-%d')
+            
+            # --- THE LOGICAL FIX ---
+            try:
+                # We put the GEE communication inside this try block
+                # If an error happens here, the 'except' block will handle it
+                # and the 'for' loop will simply move to the next iteration.
+                status = download_cnn_patch(date_label, poi, save_dir)
+                print(f"Result for {date_label}: {status}")
+                
+                if "Saved" in status: 
+                    count += 1
+            except Exception as e:
+                # This catches the GEE "no bands" or "no imagery" errors
+                print(f"❌ Error at {date_label}, skipping to next month. Details: {e}")
+                continue 
+
+    print(f"\n✨ Harvest Complete. {count} patches downloaded.")
+
 def download_cnn_patch(date_str, point, save_dir):
     """Downloads a 224x224 RGB image for a specific anomaly date."""
     zoom_buffer = 750 
@@ -53,64 +125,6 @@ def download_cnn_patch(date_str, point, save_dir):
     except Exception as e:
         return f"⚠️ Export Error: {e}"
         
-def run_dataset_harvest(lat, lon, start_date, end_date, threshold=0.25):
-    """Coordinates the NDVI analysis and anomaly image downloading."""
-    
-    # Define and create local storage
-    save_dir = os.path.join(os.path.dirname(__file__), "../../data/cnn_dataset_raw")
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir, exist_ok=True)
-
-    # 1. Fetch historical NDVI using the core engine
-    print(f"📡 Requesting NDVI history for {lat}, {lon}...")
-    raw_data = analyze_area(lat, lon, start_date, end_date)
-    
-    if not raw_data:
-        print("❌ No data returned from GEE.")
-        return
-
-    df = pd.DataFrame(raw_data)
-    df['time'] = pd.to_datetime(df['time'])
-    df.set_index('time', inplace=True)
-    
-    # 2. Establish baseline (Auto-select 2021 or the earliest available year)
-    baseline_year = df.index.min().year
-    baseline_val = df[df.index.year == baseline_year]['NDVI'].mean()
-    if pd.isna(baseline_val):
-        baseline_val = df['NDVI'].mean()
-        print(f"⚠️ 2021 data missing. Using overall mean as baseline.")
-    
-    print(f"✅ Forest Baseline: {baseline_val:.2f}")
-    print(f"🚨 Triggering downloads for NDVI < {baseline_val - threshold:.2f}")
-
-    # 3. Identify drops and download patches
-    # 3. Identify drops and download patches
-    poi = ee.Geometry.Point([lon, lat])
-    count = 0
-    
-    print(f"🚀 Starting harvest loop...")
-    
-    for index, row in df.iterrows():
-        if row['NDVI'] < (baseline_val - threshold):
-            date_label = index.strftime('%Y-%m-%d')
-            
-            # --- THE LOGICAL FIX ---
-            try:
-                # We put the GEE communication inside this try block
-                # If an error happens here, the 'except' block will handle it
-                # and the 'for' loop will simply move to the next iteration.
-                status = download_cnn_patch(date_label, poi, save_dir)
-                print(f"Result for {date_label}: {status}")
-                
-                if "Saved" in status: 
-                    count += 1
-            except Exception as e:
-                # This catches the GEE "no bands" or "no imagery" errors
-                print(f"❌ Error at {date_label}, skipping to next month. Details: {e}")
-                continue 
-
-    print(f"\n✨ Harvest Complete. {count} patches downloaded.")
-
 if __name__ == "__main__":
     if authenticate_gee():
         # Setup Command Line Arguments

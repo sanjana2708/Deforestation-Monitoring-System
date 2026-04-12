@@ -3,6 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recha
 import { postClassifyUpload, getCnnDatasetItems } from '../../api/forestApi'
 import { cnnDatasetFileUrl } from '../../api/client'
 import { probName } from './dashboardUtils'
+import { useDashboard } from './useDashboard'
 
 function extractPatchDate(filename) {
   const m = /^patch_(\d{4}-\d{2}-\d{2})_/.exec(filename || '')
@@ -31,6 +32,9 @@ function interpretationText(prediction, filename) {
 }
 
 export default function DashboardCnn() {
+
+  const { lat, lon, startDate, endDate } = useDashboard()
+
   const [prediction, setPrediction] = useState(null)
   const [uploadName, setUploadName] = useState('')
   const [classifyLoading, setClassifyLoading] = useState(false)
@@ -90,18 +94,42 @@ export default function DashboardCnn() {
     setClassifyErr('')
   }
 
+  const handleHarvest = async () => {
+    try {
+      // 3. Directly use the values from context
+      const response = await fetch('http://localhost:8000/trigger-harvest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          lat: parseFloat(lat), 
+          lon: parseFloat(lon),
+          start: startDate,
+          end: endDate 
+        })
+      });
+
+      if (!response.ok) throw new Error("Harvest failed");
+      alert("Harvesting started for coordinates: " + lat + ", " + lon);
+    } catch (e) {
+      alert("Failed to start harvest: " + e.message);
+    }
+  };
+
   const displayName = selected?.filename || uploadName
 
   return (
     <div className="dash-cnn-page">
       <section className="dash-widget">
-        <h2 className="dash-widget__title">Upload patch for detailed scores</h2>
+        <h2 className="dash-widget__title">Detailed Analysis</h2>
         <p style={{ margin: '0 0 0.65rem', fontSize: '0.78rem', color: '#7a857e', lineHeight: 1.55 }}>
-          Run the CNN on any 224×224-style satellite chip. Results show full softmax outputs for all forest-change classes.
+          Runs the CNN on any 224×224-style satellite chip. Results show full softmax outputs for all forest-change classes.
         </p>
-        <div className="dash-upload">
-          <input type="file" accept="image/*" disabled={classifyLoading} onChange={onClassifyFile} />
-        </div>
+        <button 
+          className="dash-btn dash-btn--primary" 
+          onClick={handleHarvest}
+        >
+          Run Detailed Analysis
+        </button>
         {classifyErr ? (
           <p className="dash-err" role="alert">
             {classifyErr}
@@ -165,7 +193,7 @@ export default function DashboardCnn() {
               </p>
             </>
           ) : (
-            <p style={{ margin: 0, fontSize: '0.8rem', color: '#8a938d' }}>Upload an image or select a dataset patch to see scores.</p>
+            <p style={{ margin: 0, fontSize: '0.8rem', color: '#8a938d' }}>Select a dataset patch to see scores.</p>
           )}
         </section>
       </div>
