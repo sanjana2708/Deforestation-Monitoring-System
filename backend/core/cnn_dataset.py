@@ -13,6 +13,7 @@ IMAGE_SUFFIXES = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tif', '.ti
 # backend/core -> backend
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent
 CNN_DATASET_DIR = _BACKEND_ROOT / 'data' / 'cnn_dataset_raw'
+print(CNN_DATASET_DIR)
 
 # filename -> (mtime_ns, prediction dict)
 _prediction_cache: Dict[str, Tuple[int, Dict[str, Any]]] = {}

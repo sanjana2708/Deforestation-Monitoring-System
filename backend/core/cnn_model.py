@@ -4,7 +4,7 @@ from tensorflow.keras.preprocessing.image import load_img, img_to_array
 import os
 
 # Update this to match the labels you created in simplify_tags
-CLASS_LABELS = ['agriculture', 'healthy_forest', 'logging_road', 'mining', 'other']
+CLASS_LABELS = ['agriculture', 'healthy_forest', 'logging_road', 'mining']
 MODEL_PATH = os.path.join(os.path.dirname(__file__), '..', 'models', 'ByteCoders_ForestModel_v2.keras')
 
 # Load model once when the server starts
