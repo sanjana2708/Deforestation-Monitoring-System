@@ -177,7 +177,6 @@ class HarvestRequest(BaseModel):
     lon: float
     start: str = "2020-01-01"
     end: str = "2024-12-01"
-    drop: float = 0.1
 
 # 2. Update the endpoint to use the model
 @app.post("/trigger-harvest")
@@ -192,7 +191,6 @@ async def trigger_harvest(
         request.lat, 
         request.lon, 
         request.start, 
-        request.end, 
-        request.drop
+        request.end
     )
     return {"success": True, "message": "Harvest started in background."}

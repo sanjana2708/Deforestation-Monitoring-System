@@ -8,18 +8,31 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from core.gee_engine import authenticate_gee
 
-def mask_s2_clouds(image):
-    """Simple cloud mask helper."""
+import ee
+
+def maskS2clouds(image):
+    # Select the Quality Assessment band
     qa = image.select('QA60')
-    mask = qa.bitwiseAnd(1 << 10).eq(0).And(qa.bitwiseAnd(1 << 11).eq(0))
-    return image.updateMask(mask)
+  
+    # Bits 10 and 11 represent clouds and cirrus respectively
+    cloudBitMask = 1 << 10
+    cirrusBitMask = 1 << 11
+  
+    # Both flags must be set to zero for clear conditions
+    # Note the capital 'And' used in the Python API
+    mask = qa.bitwiseAnd(cloudBitMask).eq(0).And(qa.bitwiseAnd(cirrusBitMask).eq(0))
+      
+    # Apply the mask and scale the optical bands (divide by 10000)
+    # Use copyProperties to preserve the image metadata (like timestamps)
+    return image.updateMask(mask).divide(10000).copyProperties(image, ["system:time_start"])
+
 
 def generate_timelapse(lat, lon, start_year, end_year, save_dir):
     """Generates and downloads a timelapse GIF."""
     print(f"📡 Generating timelapse for {lat}, {lon}...")
     
     point = ee.Geometry.Point([lon, lat])
-    region = point.buffer(1500).bounds()
+    region = point.buffer(500).bounds()
 
     frames = []
     years = list(range(start_year, end_year + 1))
@@ -27,15 +40,15 @@ def generate_timelapse(lat, lon, start_year, end_year, save_dir):
     for year in years:
         col = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
                .filterBounds(region)
-               .filterDate(f'{year}-01-17', f'{year}-02-27')
-               .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20)))
+               .filterDate(f'{year}-01-01', f'{year}-12-31')
+               .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 5)))
 
         if col.size().getInfo() == 0:
             print(f"⏩ Skipping {year}: No data.")
             continue
 
-        img = col.map(mask_s2_clouds).median()
-        bg = img.visualize(bands=['B4', 'B3', 'B2'], min=0, max=3000, gamma=1.3)
+        img = col.map(maskS2clouds).median()
+        bg = img.visualize(bands=['B4', 'B3', 'B2'], min=0, max=0.3, gamma=1.3)
         frames.append(bg)
 
     if not frames:
@@ -45,7 +58,7 @@ def generate_timelapse(lat, lon, start_year, end_year, save_dir):
     timelapse_col = ee.ImageCollection.fromImages(frames)
     video_url = timelapse_col.getVideoThumbURL({
         'dimensions': 1024,
-        'fps': 1,
+        'fps': 0.5,
         'region': region,
         'format': 'gif'
     })

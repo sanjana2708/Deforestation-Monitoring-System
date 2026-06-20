@@ -13,7 +13,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 from core.gee_engine import analyze_area, authenticate_gee
 
 # Keep your existing imports, just ensure the file is accessible
-def execute_harvest(lat, lon, start, end, drop=0.1):
+def execute_harvest(lat, lon, start, end):
     save_dir = os.path.join(os.path.dirname(__file__), "../../data/cnn_dataset_raw")
     if not os.path.exists(save_dir):
         os.makedirs(save_dir, exist_ok=True)
@@ -33,7 +33,6 @@ def execute_harvest(lat, lon, start, end, drop=0.1):
     else:
         os.makedirs(save_dir, exist_ok=True)
         
-    threshold = drop
     # 1. Fetch historical NDVI using the core engine
     print(f"📡 Requesting NDVI history for {lat}, {lon}...")
     raw_data = analyze_area(lat, lon, start, end)
@@ -47,14 +46,14 @@ def execute_harvest(lat, lon, start, end, drop=0.1):
     df.set_index('time', inplace=True)
     
     # 2. Establish baseline (Auto-select 2021 or the earliest available year)
-    baseline_year = df.index.min().year
-    baseline_val = df[df.index.year == baseline_year]['NDVI'].mean()
+    baseline_val = df['NDVI'].mean()
     if pd.isna(baseline_val):
         baseline_val = df['NDVI'].mean()
-        print(f"⚠️ 2021 data missing. Using overall mean as baseline.")
+        print(f"⚠️ data missing. Using overall mean as baseline.")
     
-    print(f"✅ Forest Baseline: {baseline_val:.2f}")
-    print(f"🚨 Triggering downloads for NDVI < {baseline_val - threshold:.2f}")
+    print(f"✅ Forest Baseline: {baseline_val:.3f}")
+    threshold = baseline_val*0.01
+    print(f"🚨 Triggering downloads for NDVI < {baseline_val - threshold:.3f}")
 
     # 3. Identify drops and download patches
     # 3. Identify drops and download patches
@@ -86,7 +85,7 @@ def execute_harvest(lat, lon, start, end, drop=0.1):
 
 def download_cnn_patch(date_str, point, save_dir):
     """Downloads a 224x224 RGB image for a specific anomaly date."""
-    zoom_buffer = 750 
+    zoom_buffer = 500
     image_size = 224
     
     try:
@@ -97,7 +96,7 @@ def download_cnn_patch(date_str, point, save_dir):
                    .filterBounds(point.buffer(zoom_buffer))
                    .filterDate(date_str, end)
                    # Try 20% - a middle ground between Colab's 10% and Local's 40%
-                   .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 30))) 
+                   .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 10))) 
 
         if img_col.size().getInfo() == 0:
             return f"⏩ Skipped {date_str}: No imagery found under 20% clouds."
@@ -133,14 +132,12 @@ if __name__ == "__main__":
         parser.add_argument("--lon", type=float, default=92.83, help="Longitude of target area")
         parser.add_argument("--start", type=str, default="2020-01-01", help="Start date (YYYY-MM-DD)")
         parser.add_argument("--end", type=str, default="2024-12-01", help="End date (YYYY-MM-DD)")
-        parser.add_argument("--drop", type=float, default=0.25, help="NDVI drop threshold for anomalies")
 
         args = parser.parse_args()
         
-        run_dataset_harvest(
+        run_execute_harvest(
             lat=args.lat, 
             lon=args.lon, 
             start_date=args.start, 
-            end_date=args.end,
-            threshold=args.drop
+            end_date=args.end
         )

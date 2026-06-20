@@ -53,7 +53,7 @@ def resolve_safe_file_path(filename: str) -> Optional[Path]:
     return candidate
 
 
-def get_items(limit: int = 40, refresh: bool = False) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+def get_items(limit: int = 40, refresh: bool = True) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     """
     Classify up to `limit` most recently modified images.
     Returns (items, aggregate) where aggregate maps top-1 label -> count.
