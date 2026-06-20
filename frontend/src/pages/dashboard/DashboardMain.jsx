@@ -227,7 +227,10 @@ export default function DashboardMain() {
             </p>
           ) : null}
           <div className="dash-map-wrap">
-            <ForestMap lat={lat} lon={lon} />
+            <ForestMap lat={lat} lon={lon} onMapClick={(clickedLat, clickedLon) => {
+                setLat(clickedLat);
+                setLon(clickedLon);
+            }}/>
           </div>
           <div className="dash-widget__footer">{updateLabel}</div>
         </section>

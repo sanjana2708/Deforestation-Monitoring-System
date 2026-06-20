@@ -14,17 +14,26 @@ function interpretationText(prediction, filename) {
   const date = extractPatchDate(filename)
   const label = prediction?.label
   const parts = []
+  
   if (date) {
     parts.push(`This patch was exported around the anomaly window anchored at ${date} (from NDVI drop harvesting).`)
   }
+  
+  // Synchronized with your updated 7-class backend rules mapping engine
   if (label === 'logging_road') {
     parts.push('The model leans toward linear clearing or access infrastructure—verify against roads and skid trails in high resolution.')
   } else if (label === 'mining') {
-    parts.push('Mining-like texture scores high; rule out bare rock and bright soils that confuse spectral signatures.')
+    parts.push('Mining-like surface texture patterns score high; cross-check against bare rock, river silt pits, or bright soils.')
   } else if (label === 'agriculture') {
-    parts.push('Agriculture class often overlaps with young fallow or plantation geometry; check cadastre and crop calendars.')
+    parts.push('Agriculture class often overlaps with young fallow vegetation or clear plantation geometry; check field outlines.')
   } else if (label === 'healthy_forest') {
-    parts.push('Healthy forest is the model’s read of dense canopy in the patch; still compare with the NDVI series for the full AOI.')
+    parts.push('Healthy forest is the model’s read of dense, stable canopy in the patch; compare with baseline trends.')
+  } else if (label === 'cloudy') {
+    parts.push('Heavy atmospheric cloud cover or localized mountain haze detected. Optical data visibility is obscured.')
+  } else if (label === 'habitation') {
+    parts.push('Human structures, buildings, or rural village patterns detected. Cross-check with local community boundary cadastre.')
+  } else if (label === 'water_body') {
+    parts.push('Open water signature or river silt channel detected. Verify if water levels match historical paths or flooding.')
   } else {
     parts.push('Review the probability bars and context imagery before treating any class as ground truth.')
   }
@@ -32,7 +41,6 @@ function interpretationText(prediction, filename) {
 }
 
 export default function DashboardCnn() {
-
   const { lat, lon, startDate, endDate } = useDashboard()
 
   const [prediction, setPrediction] = useState(null)
@@ -43,20 +51,27 @@ export default function DashboardCnn() {
   const [listLoading, setListLoading] = useState(false)
   const [selected, setSelected] = useState(null)
 
-  const loadList = useCallback(async () => {
+  // 🔄 INFINITE REFRESH PASS: Accepts an explicit trigger parameter
+  const loadList = useCallback(async (isRefresh = false) => {
     setListLoading(true)
     try {
-      const res = await getCnnDatasetItems({ limit: 60, refresh: false })
+      // Direct call supporting the explicit query parameter state
+      const url = `http://localhost:8000/cnn-dataset/items?limit=60&refresh=${isRefresh}`
+      const response = await fetch(url)
+      const res = await response.json()
+      
       setItems(Array.isArray(res.items) ? res.items : [])
-    } catch {
+    } catch (err) {
+      console.error("🚨 Fetching dataset gallery grid failed:", err)
       setItems([])
     } finally {
       setListLoading(false)
     }
   }, [])
 
+  // Initial render lifecycle load
   useEffect(() => {
-    loadList()
+    loadList(false)
   }, [loadList])
 
   const barData = useMemo(() => {
@@ -89,14 +104,19 @@ export default function DashboardCnn() {
 
   function selectDatasetRow(row) {
     setSelected(row)
-    setPrediction(row.prediction || null)
+    // Dynamic fallbacks accommodate direct endpoint models or custom item structures
+    const activePrediction = row.prediction || {
+      label: row.label,
+      confidence: row.confidence,
+      all_probs: row.all_probs
+    }
+    setPrediction(activePrediction)
     setUploadName(row.filename)
     setClassifyErr('')
   }
 
   const handleHarvest = async () => {
     try {
-      // 3. Directly use the values from context
       const response = await fetch('http://localhost:8000/trigger-harvest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -109,7 +129,7 @@ export default function DashboardCnn() {
       });
 
       if (!response.ok) throw new Error("Harvest failed");
-      alert("Harvesting started for coordinates: " + lat + ", " + lon);
+      alert(`Harvesting background task triggered successfully for region boundary coordinates: ${lat}, ${lon}`);
     } catch (e) {
       alert("Failed to start harvest: " + e.message);
     }
@@ -122,7 +142,7 @@ export default function DashboardCnn() {
       <section className="dash-widget">
         <h2 className="dash-widget__title">Detailed Analysis</h2>
         <p style={{ margin: '0 0 0.65rem', fontSize: '0.78rem', color: '#7a857e', lineHeight: 1.55 }}>
-          Runs the CNN on any 224×224-style satellite chip. Results show full softmax outputs for all forest-change classes.
+          Runs the CNN on any 224×224-style satellite chip. Results show full classification outputs for all forest-change classes.
         </p>
         <button 
           className="dash-btn dash-btn--primary" 
@@ -135,7 +155,7 @@ export default function DashboardCnn() {
             {classifyErr}
           </p>
         ) : null}
-        <div className="dash-widget__footer">MobileNetV2 forest model</div>
+        <div className="dash-widget__footer">MobileNetV3 optimized forest model</div>
       </section>
 
       <div className="dash-cnn-split">
@@ -144,21 +164,32 @@ export default function DashboardCnn() {
           <p style={{ margin: '0 0 0.5rem', fontSize: '0.72rem', color: '#7a857e' }}>
             Click a tile to load its saved prediction into the analysis panel.
           </p>
-          <button type="button" className="dash-btn dash-btn--ghost dash-btn--small" disabled={listLoading} onClick={() => loadList()}>
+          
+          {/* Button executes native state update calling clear functions on your database arrays */}
+          <button 
+            type="button" 
+            className="dash-btn dash-btn--ghost dash-btn--small" 
+            disabled={listLoading} 
+            onClick={() => loadList(true)}
+          >
             {listLoading ? 'Refreshing…' : 'Reload list'}
           </button>
+          
           <div className="dash-dataset-grid dash-dataset-grid--cnn">
-            {items.map((row) => (
-              <button
-                key={row.filename}
-                type="button"
-                className={`dash-dataset-select${selected?.filename === row.filename ? ' dash-dataset-select--on' : ''}`}
-                onClick={() => selectDatasetRow(row)}
-              >
-                <img src={cnnDatasetFileUrl(row.filename)} alt="" loading="lazy" />
-                <span className="dash-dataset-select__cap">{probName(row.prediction?.label || '—')}</span>
-              </button>
-            ))}
+            {items.map((row) => {
+              const currentLabel = row.prediction?.label || row.label || '—'
+              return (
+                <button
+                  key={row.filename}
+                  type="button"
+                  className={`dash-dataset-select${selected?.filename === row.filename ? ' dash-dataset-select--on' : ''}`}
+                  onClick={() => selectDatasetRow(row)}
+                >
+                  <img src={cnnDatasetFileUrl(row.filename)} alt="" loading="lazy" />
+                  <span className="dash-dataset-select__cap">{probName(currentLabel)}</span>
+                </button>
+              )
+            })}
           </div>
           {!listLoading && items.length === 0 ? (
             <p style={{ margin: '0.75rem 0 0', fontSize: '0.78rem', color: '#8a938d' }}>No files in cnn_dataset_raw.</p>
@@ -178,6 +209,14 @@ export default function DashboardCnn() {
                 Top class: <strong>{probName(prediction.label)}</strong>
                 {prediction.confidence != null ? ` (${Math.round(prediction.confidence * 100)}% confidence)` : null}
               </p>
+              
+              {/* If your backend passes down the temporal state machine alerts, render them styled nicely */}
+              {prediction.temporal_alert || selected?.prediction?.temporal_alert ? (
+                <div style={{ padding: '0.5rem', backgroundColor: '#f0f4f1', borderLeft: '3px solid #5a7c5e', fontSize: '0.75rem', marginBottom: '0.75rem', borderRadius: '4px' }}>
+                  {prediction.temporal_alert || selected?.prediction?.temporal_alert}
+                </div>
+              ) : null}
+
               <div className="dash-chart-box dash-chart-box--cnn">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart layout="vertical" data={barData} margin={{ left: 4, right: 12, top: 4, bottom: 4 }}>
