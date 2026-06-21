@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 
 from fastapi import BackgroundTasks
+from fastapi.security import HTTPAuthorizationCredentials
 from research.Scripts.generate_dataset import execute_harvest
 # Import our custom modules
 # We import authenticate_gee to ensure it's available for context-checking
@@ -14,6 +15,7 @@ from core.gee_engine import analyze_area, authenticate_gee
 from core.cnn_model import classify_patch
 from core.timelapse_gee import get_timelapse_gif_url
 from core import cnn_dataset
+from core.auth import get_current_user, security_scheme
 
 app = FastAPI(title="Himalayan Forest Monitor API")
 
@@ -26,7 +28,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Startup Event ---
+@app.on_event("startup")
+def startup_event():
+    from core.auth import init_db
+    init_db()
+
 # --- Pydantic Models (Defined before the endpoints) ---
+class UserAuthRequest(BaseModel):
+    email: str
+    password: str
+
 class AnalysisRequest(BaseModel):
     lat: float
     lon: float
@@ -52,8 +64,54 @@ ALLOWED_IMAGE_SUFFIXES = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.ti
 async def root():
     return {"status": "Online", "message": "Himalayan Forest Monitoring System"}
 
+@app.post("/auth/register")
+async def register(request: UserAuthRequest):
+    from core.auth import register_user, create_session
+    email = request.email.strip().lower()
+    password = request.password
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Invalid email address.")
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+    
+    success = register_user(email, password)
+    if not success:
+        raise HTTPException(status_code=400, detail="Email is already registered.")
+    
+    token = create_session(email)
+    return {"success": True, "email": email, "token": token}
+
+@app.post("/auth/login")
+async def login(request: UserAuthRequest):
+    from core.auth import authenticate_user, create_session
+    email = request.email.strip().lower()
+    password = request.password
+    
+    is_valid = authenticate_user(email, password)
+    if not is_valid:
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+    
+    token = create_session(email)
+    return {"success": True, "email": email, "token": token}
+
+@app.post("/auth/logout")
+async def logout(credentials: HTTPAuthorizationCredentials = Depends(security_scheme)):
+    from core.auth import verify_session, delete_session
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    token = credentials.credentials
+    email = verify_session(token)
+    if not email:
+        raise HTTPException(status_code=401, detail="Invalid session")
+    delete_session(token)
+    return {"success": True, "message": "Logged out successfully"}
+
+@app.get("/auth/me")
+async def get_me(email: str = Depends(get_current_user)):
+    return {"success": True, "email": email}
+
 @app.post("/analyze")
-async def get_forest_analysis(request: AnalysisRequest):
+async def get_forest_analysis(request: AnalysisRequest, user_email: str = Depends(get_current_user)):
     """Fetches NDVI time-series from Google Earth Engine."""
     try:
         # Re-verify authentication within the request thread to prevent 
@@ -72,7 +130,7 @@ async def get_forest_analysis(request: AnalysisRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/classify")
-async def run_classifier(request: ClassificationRequest):
+async def run_classifier(request: ClassificationRequest, user_email: str = Depends(get_current_user)):
     """Runs the MobileNetV2 model on a specific satellite patch."""
     # Ensure the path is absolute or relative to the backend root
     if not os.path.exists(request.image_path):
@@ -91,7 +149,7 @@ async def run_classifier(request: ClassificationRequest):
 
 
 @app.post("/classify-upload")
-async def classify_upload(file: UploadFile = File(...)):
+async def classify_upload(file: UploadFile = File(...), user_email: str = Depends(get_current_user)):
     """Accepts an image upload, runs the CNN classifier, and deletes the temp file."""
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in ALLOWED_IMAGE_SUFFIXES:
@@ -122,7 +180,7 @@ async def classify_upload(file: UploadFile = File(...)):
 
 
 @app.post("/timelapse-url")
-async def timelapse_url(request: TimelapseRequest):
+async def timelapse_url(request: TimelapseRequest, user_email: str = Depends(get_current_user)):
     """Returns a Google Earth Engine GIF thumbnail URL for the AOI (short-lived URL)."""
     try:
         if request.end_year < request.start_year:
@@ -148,7 +206,7 @@ async def timelapse_url(request: TimelapseRequest):
 
 
 @app.get("/cnn-dataset/items")
-async def cnn_dataset_items(limit: int = 40, refresh: bool = False):
+async def cnn_dataset_items(limit: int = 40, refresh: bool = False, user_email: str = Depends(get_current_user)):
     """List classified samples from data/cnn_dataset_raw (newest first)."""
     try:
         lim = max(1, min(100, limit))
@@ -160,7 +218,7 @@ async def cnn_dataset_items(limit: int = 40, refresh: bool = False):
 
 
 @app.get("/cnn-dataset/file/{filename}")
-async def cnn_dataset_file(filename: str):
+async def cnn_dataset_file(filename: str, user_email: str = Depends(get_current_user)):
     """Serve a single image from cnn_dataset_raw (basename only, no traversal)."""
     path = cnn_dataset.resolve_safe_file_path(filename)
     if path is None:
@@ -182,7 +240,8 @@ class HarvestRequest(BaseModel):
 @app.post("/trigger-harvest")
 async def trigger_harvest(
     request: HarvestRequest, # Use the model here
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    user_email: str = Depends(get_current_user)
 ):
     """Triggers the dataset harvest in the background."""
     # Pass the fields from the request object

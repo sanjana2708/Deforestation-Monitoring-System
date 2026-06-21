@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import AuthPageLayout from '../components/auth/AuthPageLayout'
 import { AUTH_IMAGE_SIGNUP } from '../constants/authAssets'
 import { setSession } from '../auth/session'
+import { postRegister } from '../api/authApi'
 import '../styles/auth.css'
 
 function MailIcon() {
@@ -51,9 +52,11 @@ export default function SignupPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
+    if (loading) return
     setError('')
     if (!emailOk(email)) {
       setError('Please enter a valid email address.')
@@ -67,8 +70,19 @@ export default function SignupPage() {
       setError('Passwords do not match.')
       return
     }
-    setSession({ email })
-    navigate('/dashboard', { replace: true })
+
+    try {
+      setLoading(true)
+      await postRegister(email, password)
+      navigate('/login', {
+        replace: true,
+        state: { successMessage: 'Registration successful! Please log in with your credentials.' }
+      })
+    } catch (err) {
+      setError(err?.message || 'An error occurred during registration.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -139,8 +153,8 @@ export default function SignupPage() {
             <EyeIcon open={showConfirm} />
           </button>
         </div>
-        <button type="submit" className="auth-form__submit">
-          Sign up <span aria-hidden>→</span>
+        <button type="submit" className="auth-form__submit" disabled={loading}>
+          {loading ? 'Registering...' : 'Sign up'} <span aria-hidden>→</span>
         </button>
         <p className="auth-form__switch">
           Already have an account? <Link to="/login">Sign in here!</Link>

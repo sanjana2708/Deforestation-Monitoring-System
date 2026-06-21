@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import AuthPageLayout from '../components/auth/AuthPageLayout'
 import { AUTH_IMAGE_SIGNIN } from '../constants/authAssets'
 import { setSession } from '../auth/session'
+import { postLogin } from '../api/authApi'
 import '../styles/auth.css'
 
 function MailIcon() {
@@ -45,15 +46,20 @@ const emailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
 
 export default function LoginPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [remember, setRemember] = useState(true)
   const [error, setError] = useState('')
+  const [successMsg, setSuccessMsg] = useState(location.state?.successMessage || '')
+  const [loading, setLoading] = useState(false)
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
+    if (loading) return
     setError('')
+    setSuccessMsg('')
     if (!emailOk(email)) {
       setError('Please enter a valid email address.')
       return
@@ -62,8 +68,17 @@ export default function LoginPage() {
       setError('Password must be at least 6 characters.')
       return
     }
-    setSession({ email }, remember)
-    navigate('/dashboard', { replace: true })
+
+    try {
+      setLoading(true)
+      const data = await postLogin(email, password)
+      setSession({ email: data.email, token: data.token }, remember)
+      navigate('/dashboard', { replace: true })
+    } catch (err) {
+      setError(err?.message || 'An error occurred during login.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -77,6 +92,11 @@ export default function LoginPage() {
     >
       <h2 className="auth-form__title">Sign in here</h2>
       <form className="auth-form" onSubmit={handleSubmit} noValidate>
+        {successMsg ? (
+          <p className="auth-form__success" role="status">
+            {successMsg}
+          </p>
+        ) : null}
         {error ? (
           <p className="auth-form__error" role="alert">
             {error}
@@ -120,8 +140,8 @@ export default function LoginPage() {
             Remember me
           </label>
         </div>
-        <button type="submit" className="auth-form__submit">
-          Login <span aria-hidden>→</span>
+        <button type="submit" className="auth-form__submit" disabled={loading}>
+          {loading ? 'Logging in...' : 'Login'} <span aria-hidden>→</span>
         </button>
         <p className="auth-form__switch">
           Don&apos;t have an account?{' '}

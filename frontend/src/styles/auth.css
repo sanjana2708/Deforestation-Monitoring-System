@@ -238,6 +238,12 @@
   color: #b54a4a;
 }
 
+.auth-form__success {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #3d7d4c;
+}
+
 .auth-form__switch {
   margin: 1.5rem 0 0;
   font-size: 0.72rem;

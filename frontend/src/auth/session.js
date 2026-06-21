@@ -10,8 +10,8 @@ export function getSession() {
   }
 }
 
-export function setSession({ email }, persist = true) {
-  const data = JSON.stringify({ email })
+export function setSession({ email, token }, persist = true) {
+  const data = JSON.stringify({ email, token })
   localStorage.removeItem(KEY)
   sessionStorage.removeItem(KEY)
   if (persist) localStorage.setItem(KEY, data)

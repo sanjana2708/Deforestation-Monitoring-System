@@ -1,3 +1,5 @@
+import { getSession } from '../auth/session'
+
 const DEFAULT_BASE = 'http://localhost:8000'
 
 export function getApiBaseUrl() {
@@ -7,7 +9,9 @@ export function getApiBaseUrl() {
 }
 
 export function cnnDatasetFileUrl(filename) {
-  return `${getApiBaseUrl()}/cnn-dataset/file/${encodeURIComponent(filename)}`
+  const session = getSession()
+  const tokenParam = session?.token ? `?token=${encodeURIComponent(session.token)}` : ''
+  return `${getApiBaseUrl()}/cnn-dataset/file/${encodeURIComponent(filename)}${tokenParam}`
 }
 
 /**
@@ -22,6 +26,10 @@ export function apiFetch(path, init = {}) {
   const headers = new Headers(init.headers)
   if (init.body != null && typeof init.body === 'string' && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
+  }
+  const session = getSession()
+  if (session?.token) {
+    headers.set('Authorization', `Bearer ${session.token}`)
   }
   return fetch(url, { ...init, headers })
 }

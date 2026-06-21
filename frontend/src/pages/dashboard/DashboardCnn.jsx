@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { postClassifyUpload, getCnnDatasetItems } from '../../api/forestApi'
-import { cnnDatasetFileUrl } from '../../api/client'
+import { cnnDatasetFileUrl, apiFetch } from '../../api/client'
 import { probName } from './dashboardUtils'
 import { useDashboard } from './useDashboard'
 
@@ -50,16 +50,13 @@ export default function DashboardCnn() {
   const [items, setItems] = useState([])
   const [listLoading, setListLoading] = useState(false)
   const [selected, setSelected] = useState(null)
+  const [harvestLoading, setHarvestLoading] = useState(false)
 
   // 🔄 INFINITE REFRESH PASS: Accepts an explicit trigger parameter
   const loadList = useCallback(async (isRefresh = false) => {
     setListLoading(true)
     try {
-      // Direct call supporting the explicit query parameter state
-      const url = `http://localhost:8000/cnn-dataset/items?limit=60&refresh=${isRefresh}`
-      const response = await fetch(url)
-      const res = await response.json()
-      
+      const res = await getCnnDatasetItems({ limit: 60, refresh: isRefresh })
       setItems(Array.isArray(res.items) ? res.items : [])
     } catch (err) {
       console.error("🚨 Fetching dataset gallery grid failed:", err)
@@ -116,10 +113,10 @@ export default function DashboardCnn() {
   }
 
   const handleHarvest = async () => {
+    setHarvestLoading(true)
     try {
-      const response = await fetch('http://localhost:8000/trigger-harvest', {
+      const response = await apiFetch('/trigger-harvest', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           lat: parseFloat(lat), 
           lon: parseFloat(lon),
@@ -132,6 +129,8 @@ export default function DashboardCnn() {
       alert(`Harvesting background task triggered successfully for region boundary coordinates: ${lat}, ${lon}`);
     } catch (e) {
       alert("Failed to start harvest: " + e.message);
+    } finally {
+      setHarvestLoading(false)
     }
   };
 
@@ -146,9 +145,11 @@ export default function DashboardCnn() {
         </p>
         <button 
           className="dash-btn dash-btn--primary" 
+          disabled={harvestLoading}
+          style={harvestLoading ? { opacity: 0.5, pointerEvents: 'none', filter: 'blur(0.5px)' } : {}}
           onClick={handleHarvest}
         >
-          Run Detailed Analysis
+          {harvestLoading ? 'Analyzing...' : 'Run Detailed Analysis'}
         </button>
         {classifyErr ? (
           <p className="dash-err" role="alert">
@@ -175,21 +176,111 @@ export default function DashboardCnn() {
             {listLoading ? 'Refreshing…' : 'Reload list'}
           </button>
           
-          <div className="dash-dataset-grid dash-dataset-grid--cnn">
-            {items.map((row) => {
-              const currentLabel = row.prediction?.label || row.label || '—'
-              return (
-                <button
-                  key={row.filename}
-                  type="button"
-                  className={`dash-dataset-select${selected?.filename === row.filename ? ' dash-dataset-select--on' : ''}`}
-                  onClick={() => selectDatasetRow(row)}
+          <div style={{ position: 'relative', marginTop: '1rem', minHeight: '320px' }}>
+            <style>{`
+              @keyframes scaleUp {
+                from { transform: scale(0.92); opacity: 0; }
+                to { transform: scale(1); opacity: 1; }
+              }
+            `}</style>
+
+            {selected ? (
+              <div className="dash-enlarged-overlay" style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                backdropFilter: 'blur(8px)',
+                zIndex: 10,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '10px',
+                border: '2px solid #5a7c5e',
+                padding: '1rem',
+                boxSizing: 'border-box',
+                animation: 'scaleUp 0.18s ease-out'
+              }}>
+                <button 
+                  type="button" 
+                  onClick={() => { setSelected(null); setPrediction(null); }}
+                  aria-label="Close enlarged view"
+                  style={{
+                    position: 'absolute',
+                    top: '8px',
+                    right: '8px',
+                    background: '#eceeec',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: '28px',
+                    height: '28px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                    color: '#4d5a53',
+                    fontSize: '12px',
+                    transition: 'background 0.2s',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.08)'
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#dce0dd'}
+                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#eceeec'}
                 >
-                  <img src={cnnDatasetFileUrl(row.filename)} alt="" loading="lazy" />
-                  <span className="dash-dataset-select__cap">{probName(currentLabel)}</span>
+                  ✕
                 </button>
-              )
-            })}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  width: '100%',
+                  height: '100%',
+                  justifyContent: 'center'
+                }}>
+                  <img 
+                    src={cnnDatasetFileUrl(selected.filename)} 
+                    alt={selected.filename}
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '220px',
+                      objectFit: 'contain',
+                      borderRadius: '8px',
+                      boxShadow: '0 8px 16px rgba(0, 0, 0, 0.12)',
+                      border: '2px solid #5a7c5e'
+                    }}
+                  />
+                  <div style={{ textAlign: 'center', padding: '0 0.5rem' }}>
+                    <p style={{ margin: 0, fontWeight: '600', fontSize: '0.72rem', color: '#1a221e', wordBreak: 'break-all' }}>
+                      {selected.filename}
+                    </p>
+                    <p style={{ margin: '2px 0 0', fontSize: '0.68rem', color: '#5a7c5e', fontWeight: 'bold' }}>
+                      Class: {probName(selected.prediction?.label || selected.label || '—')}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="dash-dataset-grid dash-dataset-grid--cnn">
+              {items.map((row) => {
+                const currentLabel = row.prediction?.label || row.label || '—'
+                return (
+                  <button
+                    key={row.filename}
+                    type="button"
+                    className={`dash-dataset-select${selected?.filename === row.filename ? ' dash-dataset-select--on' : ''}`}
+                    onClick={() => selectDatasetRow(row)}
+                  >
+                    <img src={cnnDatasetFileUrl(row.filename)} alt="" loading="lazy" />
+                    <span className="dash-dataset-select__cap">{probName(currentLabel)}</span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
           {!listLoading && items.length === 0 ? (
             <p style={{ margin: '0.75rem 0 0', fontSize: '0.78rem', color: '#8a938d' }}>No files in cnn_dataset_raw.</p>

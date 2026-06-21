@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { getSession, clearSession } from '../../auth/session'
+import { postLogout } from '../../api/authApi'
 import { DashboardProvider } from './DashboardContext'
 import '../../styles/dashboard.css'
 
@@ -27,7 +28,12 @@ function DashboardShell() {
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
 
-  function logout() {
+  async function logout() {
+    try {
+      await postLogout()
+    } catch {
+      // Ignore API logout errors since we are clearing the local session anyway
+    }
     clearSession()
     setMenuOpen(false)
     navigate('/login', { replace: true })
