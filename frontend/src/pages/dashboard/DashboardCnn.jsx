@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { postClassifyUpload, getCnnDatasetItems } from '../../api/forestApi'
 import { cnnDatasetFileUrl, apiFetch } from '../../api/client'
@@ -51,6 +51,8 @@ export default function DashboardCnn() {
   const [listLoading, setListLoading] = useState(false)
   const [selected, setSelected] = useState(null)
   const [harvestLoading, setHarvestLoading] = useState(false)
+  const [harvestMsg, setHarvestMsg] = useState('')
+  const harvestInFlightRef = useRef(false)
 
   // 🔄 INFINITE REFRESH PASS: Accepts an explicit trigger parameter
   const loadList = useCallback(async (isRefresh = false) => {
@@ -113,26 +115,43 @@ export default function DashboardCnn() {
   }
 
   const handleHarvest = async () => {
+    if (harvestInFlightRef.current) return
+
+    harvestInFlightRef.current = true
     setHarvestLoading(true)
+    setHarvestMsg('')
+    setClassifyErr('')
     try {
       const response = await apiFetch('/trigger-harvest', {
         method: 'POST',
-        body: JSON.stringify({ 
-          lat: parseFloat(lat), 
+        body: JSON.stringify({
+          lat: parseFloat(lat),
           lon: parseFloat(lon),
           start: startDate,
-          end: endDate 
-        })
-      });
+          end: endDate,
+        }),
+      })
 
-      if (!response.ok) throw new Error("Harvest failed");
-      alert(`Harvesting background task triggered successfully for region boundary coordinates: ${lat}, ${lon}`);
+      if (!response.ok) {
+        let detail = 'Analysis failed'
+        try {
+          const body = await response.json()
+          if (body?.detail) detail = String(body.detail)
+        } catch {
+          // ignore parse errors
+        }
+        throw new Error(detail)
+      }
+
+      await loadList(true)
+      setHarvestMsg(`Analysis complete for coordinates ${lat}, ${lon}. Select a patch below to view results.`)
     } catch (e) {
-      alert("Failed to start harvest: " + e.message);
+      setClassifyErr(e.message || 'Analysis failed')
     } finally {
+      harvestInFlightRef.current = false
       setHarvestLoading(false)
     }
-  };
+  }
 
   const displayName = selected?.filename || uploadName
 
@@ -143,14 +162,25 @@ export default function DashboardCnn() {
         <p style={{ margin: '0 0 0.65rem', fontSize: '0.78rem', color: '#7a857e', lineHeight: 1.55 }}>
           Runs the CNN on any 224×224-style satellite chip. Results show full classification outputs for all forest-change classes.
         </p>
-        <button 
-          className="dash-btn dash-btn--primary" 
+        <button
+          type="button"
+          className="dash-btn dash-btn--primary"
           disabled={harvestLoading}
-          style={harvestLoading ? { opacity: 0.5, pointerEvents: 'none', filter: 'blur(0.5px)' } : {}}
+          aria-busy={harvestLoading}
           onClick={handleHarvest}
         >
-          {harvestLoading ? 'Analyzing...' : 'Run Detailed Analysis'}
+          {harvestLoading ? 'LOADING ANALYSIS' : 'Run Detailed Analysis'}
         </button>
+        {harvestLoading ? (
+          <p style={{ margin: '0.5rem 0 0', fontSize: '0.78rem', color: '#5a6560' }} role="status" aria-live="polite">
+            Running detailed analysis — please wait…
+          </p>
+        ) : null}
+        {harvestMsg ? (
+          <p style={{ margin: '0.5rem 0 0', fontSize: '0.78rem', color: '#3d6b45' }} role="status">
+            {harvestMsg}
+          </p>
+        ) : null}
         {classifyErr ? (
           <p className="dash-err" role="alert">
             {classifyErr}

@@ -6,7 +6,8 @@ import os
 import tempfile
 from pathlib import Path
 
-from fastapi import BackgroundTasks
+import asyncio
+
 from fastapi.security import HTTPAuthorizationCredentials
 from research.Scripts.generate_dataset import execute_harvest
 # Import our custom modules
@@ -239,17 +240,18 @@ class HarvestRequest(BaseModel):
 # 2. Update the endpoint to use the model
 @app.post("/trigger-harvest")
 async def trigger_harvest(
-    request: HarvestRequest, # Use the model here
-    background_tasks: BackgroundTasks,
-    user_email: str = Depends(get_current_user)
+    request: HarvestRequest,
+    user_email: str = Depends(get_current_user),
 ):
-    """Triggers the dataset harvest in the background."""
-    # Pass the fields from the request object
-    background_tasks.add_task(
-        execute_harvest, 
-        request.lat, 
-        request.lon, 
-        request.start, 
-        request.end
-    )
-    return {"success": True, "message": "Harvest started in background."}
+    """Run dataset harvest and return when analysis data is ready."""
+    try:
+        await asyncio.to_thread(
+            execute_harvest,
+            request.lat,
+            request.lon,
+            request.start,
+            request.end,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"success": True, "message": "Harvest complete."}
