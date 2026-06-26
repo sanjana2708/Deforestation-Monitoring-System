@@ -1,4 +1,5 @@
 import os
+import concurrent.futures
 import requests
 import pandas as pd
 import argparse
@@ -10,7 +11,7 @@ import ee
 # Import the engine logic from your backend
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
-from core.gee_engine import analyze_area, authenticate_gee
+from core.gee_engine import analyze_area, authenticate_gee, get_session_ndvi
 
 # Keep your existing imports, just ensure the file is accessible
 def execute_harvest(lat, lon, start, end):
@@ -33,9 +34,14 @@ def execute_harvest(lat, lon, start, end):
     else:
         os.makedirs(save_dir, exist_ok=True)
         
-    # 1. Fetch historical NDVI using the core engine
+    # 1. Fetch historical NDVI using the session cache or the core engine
     print(f"📡 Requesting NDVI history for {lat}, {lon}...")
-    raw_data = analyze_area(lat, lon, start, end)
+    raw_data = get_session_ndvi(lat, lon, start, end)
+    if raw_data:
+        print("🎯 Using cached NDVI data from session cache!")
+    else:
+        print("🔄 No session cache found, making GEE API call...")
+        raw_data = analyze_area(lat, lon, start, end)
     
     if not raw_data:
         print("❌ No data returned from GEE.")
@@ -56,36 +62,40 @@ def execute_harvest(lat, lon, start, end):
     print(f"🚨 Triggering downloads for NDVI < {baseline_val - threshold:.3f}")
 
     # 3. Identify drops and download patches
-    # 3. Identify drops and download patches
     poi = ee.Geometry.Point([lon, lat])
-    count = 0
     
-    print(f"🚀 Starting harvest loop...")
-
+    # Identify anomaly dates first
+    anomalies = []
     for index, row in df.iterrows():
         if row['NDVI'] < (baseline_val - threshold):
-            date_label = index.strftime('%Y-%m-%d')
+            anomalies.append(index.strftime('%Y-%m-%d'))
             
-            # --- THE LOGICAL FIX ---
-            try:
-                # We put the GEE communication inside this try block
-                # If an error happens here, the 'except' block will handle it
-                # and the 'for' loop will simply move to the next iteration.
-                status = download_cnn_patch(date_label, poi, save_dir)
-                print(f"Result for {date_label}: {status}")
-                
-                if "Saved" in status: 
-                    count += 1
-            except Exception as e:
-                # This catches the GEE "no bands" or "no imagery" errors
-                print(f"❌ Error at {date_label}, skipping to next month. Details: {e}")
-                continue 
+    print(f"🚀 Starting harvest pool with {len(anomalies)} anomalies...")
+
+    def download_worker(date_label):
+        try:
+            status = download_cnn_patch(date_label, poi, save_dir)
+            print(f"Result for {date_label}: {status}")
+            return status
+        except Exception as e:
+            print(f"❌ Error at {date_label}. Details: {e}")
+            return f"Error: {e}"
+
+    count = 0
+    if anomalies:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            # Map the worker function to all identified anomaly dates
+            results = list(executor.map(download_worker, anomalies))
+            
+        for res in results:
+            if res and "Saved" in res:
+                count += 1
 
     print(f"\n✨ Harvest Complete. {count} patches downloaded.")
 
 def download_cnn_patch(date_str, point, save_dir):
     """Downloads a 224x224 RGB image for a specific anomaly date."""
-    zoom_buffer = 500
+    zoom_buffer = 1120
     image_size = 224
     
     try:
@@ -135,9 +145,9 @@ if __name__ == "__main__":
 
         args = parser.parse_args()
         
-        run_execute_harvest(
+        execute_harvest(
             lat=args.lat, 
             lon=args.lon, 
-            start_date=args.start, 
-            end_date=args.end
+            start=args.start, 
+            end=args.end
         )
