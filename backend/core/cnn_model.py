@@ -4,7 +4,7 @@ import onnxruntime as ort
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
 
 # 1. Maintain your exact downstream categories for server compatibility
-CLASS_LABELS = ['agriculture','cloudy','habitation', 'healthy_forest', 'logging_road', 'mining','water_body']
+CLASS_LABELS = ['agriculture','cloudy','habitation', 'healthy_forest', 'logging_road', 'mining','water_body','others']
 
 # Update path pointing to your newly created universal ONNX asset
 MODEL_PATH = os.path.join(os.path.dirname(__file__), '..', 'models', 'deforestation_model.onnx')
@@ -45,30 +45,36 @@ def classify_patch(image_path):
     # Apply Sigmoid activation mathematically to get absolute probabilities
     probs = 1 / (1 + np.exp(-logits))
     
-    # 3. INTELLIGENT RULE MAPPING ENGINE (17 Multi-Labels -> 4 Project Classes)
-    # Extract specific channel weights
-    p_agri = probs[onnx_tag_to_idx['agriculture']]
-    p_cult = probs[onnx_tag_to_idx['cultivation']]
-    p_road = probs[onnx_tag_to_idx['road']]
-    p_log  = probs[onnx_tag_to_idx['selective_logging']]
-    p_art  = probs[onnx_tag_to_idx['artisinal_mine']]
-    p_conv = probs[onnx_tag_to_idx['conventional_mine']]
-    p_bare = probs[onnx_tag_to_idx['bare_ground']]
-    p_prim = probs[onnx_tag_to_idx['primary']]
-    p_water = probs[onnx_tag_to_idx['water']]
-    p_hab = probs[onnx_tag_to_idx['habitation']]
-    p_cloud = probs[onnx_tag_to_idx['cloudy']]
+    # 3. INTELLIGENT RULE MAPPING ENGINE (17 ONNX Multi-Labels -> 8 Project Classes)
+    # Extract all 17 channel weights
+    p_agri    = probs[onnx_tag_to_idx['agriculture']]
+    p_cult    = probs[onnx_tag_to_idx['cultivation']]
+    p_road    = probs[onnx_tag_to_idx['road']]
+    p_log     = probs[onnx_tag_to_idx['selective_logging']]
+    p_art     = probs[onnx_tag_to_idx['artisinal_mine']]
+    p_conv    = probs[onnx_tag_to_idx['conventional_mine']]
+    p_bare    = probs[onnx_tag_to_idx['bare_ground']]
+    p_prim    = probs[onnx_tag_to_idx['primary']]
+    p_water   = probs[onnx_tag_to_idx['water']]
+    p_hab     = probs[onnx_tag_to_idx['habitation']]
+    p_cloud   = probs[onnx_tag_to_idx['cloudy']]
     p_pcloudy = probs[onnx_tag_to_idx['partly_cloudy']]
-    p_haze = probs[onnx_tag_to_idx['haze']]
-    # Synthesize probabilities down to your 4 primary labels
+    p_haze    = probs[onnx_tag_to_idx['haze']]
+    p_bloom   = probs[onnx_tag_to_idx['blooming']]
+    p_blow    = probs[onnx_tag_to_idx['blow_down']]
+    p_clear   = probs[onnx_tag_to_idx['clear']]
+    p_slash   = probs[onnx_tag_to_idx['slash_burn']]
+
+    # Synthesize all 17 ONNX probabilities down to 8 project class labels
     mapped_probs = {
-        'agriculture':    float(max(p_agri, p_cult)),
-        'cloudy':         float(p_cloud),
+        'agriculture':    float(max(p_agri, p_cult,p_bare)),
+        'cloudy':         float(max(p_cloud, p_pcloudy, p_haze)),
         'habitation':     float(p_hab),
         'logging_road':   float(max(p_road, p_log)),
         'mining':         float(max(p_art, p_conv)),
         'water_body':     float(p_water),
-        'healthy_forest': float(p_prim * (1.0 - max(p_agri, p_road, p_log, p_art, p_conv)))
+        'healthy_forest': float(p_prim*p_bloom* (1.0 - max(p_agri, p_road, p_log, p_art, p_conv))),
+        'others':         float(max(p_blow, p_clear, p_slash)),
     }
     
     # 4. DETERMINE ARGMAX BASED ON SYNTHESIZED LABELS
